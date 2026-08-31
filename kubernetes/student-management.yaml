@@ -1,0 +1,268 @@
+
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sp
+
+---
+# ============================================================
+# 1. SECRET
+# ============================================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: sp
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: rootpassword
+  MYSQL_PASSWORD: studentpassword
+
+---
+# ============================================================
+# 2. CONFIGMAP
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: student-config
+  namespace: sp
+data:
+  DB_HOST: mysql
+  DB_NAME: studentdb
+  DB_USER: studentuser
+
+---
+# ============================================================
+# 3. MYSQL HEADLESS SERVICE
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: sp
+  labels:
+    app: mysql
+spec:
+  clusterIP: None
+
+  selector:
+    app: mysql
+
+  ports:
+    - port: 3306
+      targetPort: 3306
+
+---
+# ============================================================
+# 4. MYSQL STATEFULSET
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: sp
+
+spec:
+  serviceName: mysql
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: mysql
+
+  template:
+
+    metadata:
+      labels:
+        app: mysql
+
+    spec:
+
+      containers:
+
+        - name: mysql
+
+          image: mysql:8.0
+
+          ports:
+            - containerPort: 3306
+
+          env:
+
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: student-config
+                  key: DB_NAME
+
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: student-config
+                  key: DB_USER
+
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_PASSWORD
+
+          volumeMounts:
+
+            - name: mysql-storage
+              mountPath: /var/lib/mysql
+
+  # ----------------------------------------------------------
+  # Persistent Volume Claim
+  # ----------------------------------------------------------
+
+  volumeClaimTemplates:
+
+    - metadata:
+        name: mysql-storage
+
+      spec:
+
+        accessModes:
+          - ReadWriteOnce
+
+        resources:
+
+          requests:
+            storage: 1Gi
+
+---
+# ============================================================
+# 5. PHP APPLICATION DEPLOYMENT
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-app
+  namespace: sp
+
+spec:
+
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: student-app
+
+  template:
+
+    metadata:
+      labels:
+        app: student-app
+
+    spec:
+
+      containers:
+
+        - name: student-app
+
+          image: student-app:1.0
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 80
+
+          env:
+
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: student-config
+                  key: DB_HOST
+
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: student-config
+                  key: DB_NAME
+
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: student-config
+                  key: DB_USER
+
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_PASSWORD
+
+---
+# ============================================================
+# 6. PHP APPLICATION SERVICE
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: student-apps
+  namespace: sp
+
+spec:
+
+  type: NodePort
+
+  selector:
+    app: student-app
+
+  ports:
+
+    - port: 80
+      targetPort: 80
+      nodePort: 30081
+
+---
+# ============================================================
+# 7. NETWORK POLICY
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mysql-network-policy
+  namespace: sp
+
+spec:
+
+  # Apply this policy to MySQL Pods
+  podSelector:
+    matchLabels:
+      app: mysql
+
+  policyTypes:
+    - Ingress
+
+  ingress:
+
+    # Only PHP application Pods can access MySQL
+    - from:
+
+        - podSelector:
+            matchLabels:
+              app: student-app
+
+      ports:
+
+        - protocol: TCP
+          port: 3306
+```
