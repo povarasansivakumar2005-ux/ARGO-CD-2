@@ -106,3 +106,24 @@ PVC
   |
   v
 Persistent Storage
+
+## ArgoCD Deployment (GitOps)
+
+Apply ArgoCD Application manifest:
+
+```bash
+kubectl apply -f argocd-application.yaml -n argocd
+```
+
+Verify ArgoCD Application status:
+
+```bash
+kubectl get application student-management -n argocd
+```
+
+Check deployed application resources in `sp` namespace:
+
+```bash
+kubectl get all -n sp
+```
+
