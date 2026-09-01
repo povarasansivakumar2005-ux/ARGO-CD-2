@@ -265,4 +265,3 @@ spec:
 
         - protocol: TCP
           port: 3306
-```
