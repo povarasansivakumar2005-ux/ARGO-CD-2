@@ -174,7 +174,7 @@ spec:
 
         - name: student-app
 
-          image: student-app:1.0
+          image: student-app:latest
 
           imagePullPolicy: IfNotPresent
 
